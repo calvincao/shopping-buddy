@@ -1,35 +1,25 @@
 const bcrypt = require('bcrypt');
 const SALT_ROUNDS = 10;
 const User = require('../models/UserModel');
+const Token = require('../models/TokenModel');
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const userController = {};
 
 userController.login = async (req, res, next) => {
   try {
     const { username, password } = req.body;
-    if (!username || !password)
-      return next({
-        log: 'User provided username and/or password is not valid.',
-        status: 401,
-        message: { err: 'User provided username and/or password is not valid.' },
-      });
+    // missing username and/or password
+    if (!username || !password) return res.sendStatus(406);
     const response = await User.find({ username });
-    if (!response.length)
-      return next({
-        log: 'Username not found',
-        status: 401,
-        message: { err: 'Username not found' },
-      });
+    // user not found in db
+    if (!response.length) return res.sendStatus(403);
     const hashedPassword = response[0].password;
     const passwordDoesMatch = await bcrypt.compare(password, hashedPassword);
-    if (passwordDoesMatch) {
-      return next();
-    } else
-      return next({
-        log: 'Bad password',
-        status: 401,
-        message: { err: 'Bad password' },
-      });
+    // password doesn't match
+    if (passwordDoesMatch) return next();
+    else return res.sendStatus(403);
   } catch (err) {
     return next({
       log: 'Error occured in userController.login middleware.',
@@ -42,16 +32,11 @@ userController.login = async (req, res, next) => {
 userController.signup = async (req, res, next) => {
   try {
     const { username, password } = req.body;
+    if (!username || !username.length || !password || !password.length) return res.sendStatus(401);
     const nameCheck = await User.find({ username });
-    if (nameCheck.length > 0)
-      return next({
-        log: 'Username already used',
-        status: 401,
-        message: { err: 'Username already used' },
-      });
+    if (nameCheck.length > 0) return res.sendStatus(403);
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-    const response = await User.create({ username: username, password: hashedPassword });
-    console.log(response);
+    await User.create({ username: username, password: hashedPassword });
     return next();
   } catch (err) {
     console.error(err);
@@ -62,5 +47,52 @@ userController.signup = async (req, res, next) => {
     });
   }
 };
+
+// userController.createToken = async (req, res, next) => {
+//   try {
+//     const username = req.body.username;
+//     const user = { username: username };
+//     const accessToken = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '30s' });
+//     const refreshToken = jwt.sign(user, process.env.REFRESH_TOKEN_SECRET);
+//     await Token.create({ token: refreshToken });
+//     res.locals.tokens = { accessToken, refreshToken };
+//     next();
+//   } catch (err) {
+//     console.log(err);
+//     return next({
+//       log: 'Error occured in userController.createToken middleware.',
+//       status: 500,
+//       message: { err: err.msg },
+//     });
+//   }
+// };
+
+// userController.authenticateToken = (req, res, next) => {
+//   const { accessToken } = req.cookies;
+//   if (accessToken === null) return res.sendStatus(401);
+//   jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
+//     // if token is expired, attempt to refresh
+//     if (err && err.message === 'jwt expired') {
+//       res.locals.refreshToken = true;
+//       return next();
+//     } else if (err && err.message === 'invalid signature') return res.sendStatus(403);
+//     req.user = user;
+//     return next();
+//   });
+// };
+
+// userController.refreshToken = async (req, res, next) => {
+//   if (res.locals.refreshToken === false) return next();
+//   const { refreshToken } = req.cookies;
+//   if (refreshToken === null) return res.sendStatus(401);
+//   const response = await Token.find({ token: refreshToken });
+//   if (response.length === 0) return res.sendStatus(403);
+//   jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, user) => {
+//     if (err) return res.sendStatus(403);
+//     const accessToken = jwt.sign(user.username, process.env.ACCESS_TOKEN_SECRET);
+//     res.locals.tokens = { accessToken, refreshToken };
+//     return next();
+//   });
+// };
 
 module.exports = userController;
